@@ -1,5 +1,6 @@
 package rwcounter
 
+// v0.0.1
 import (
 	"sync"
 	"sync/atomic"
