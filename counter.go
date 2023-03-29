@@ -89,6 +89,7 @@ func (c *Counter) Incr(key string, step int64) {
 	idx := c.hash(key)
 	c.mutex[idx].RLock()
 	var counter *CounterItem
+	var wCounter *int64
 	var ok bool
 	counter, ok = c.pool[idx][key]
 	if !ok {
@@ -100,16 +101,18 @@ func (c *Counter) Incr(key string, step int64) {
 			windows: make(map[int]*int64),
 		}
 		c.pool[idx][key] = counter
-		c.mutex[idx].Unlock()
 		for i := 0; i < c.windowSize; i++ {
 			c.pool[idx][key].windows[i] = new(int64)
 		}
+		wCounter = counter.windows[c.currentWindow]
+		c.mutex[idx].Unlock()
 	} else {
+		wCounter = counter.windows[c.currentWindow]
 		c.mutex[idx].RUnlock()
 	}
 
 	atomic.AddInt64(counter.Count, step)
-	atomic.AddInt64(counter.windows[c.currentWindow], step)
+	atomic.AddInt64(wCounter, step)
 	counter.Last = time.Now()
 }
 
