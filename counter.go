@@ -133,6 +133,18 @@ func (c *Counter) Get(key string) int64 {
 	return atomic.LoadInt64(ptr.Count)
 }
 
+func (c *Counter) Keys() []string {
+	var keys []string
+	for i, m := range c.pool {
+		c.mutex[i].RLock()
+		for k := range m {
+			keys = append(keys, k)
+		}
+		c.mutex[i].RUnlock()
+	}
+	return keys
+}
+
 func (c *Counter) decr(key string, step int64) {
 	idx := c.hash(key)
 	c.mutex[idx].RLock()
