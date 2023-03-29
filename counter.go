@@ -15,9 +15,10 @@ type Counter struct {
 }
 
 type CounterItem struct {
-	Count   *int64
-	Last    time.Time
-	windows map[int]*int64
+	Count         *int64
+	InternalCount *int64
+	Last          time.Time
+	windows       map[int]*int64
 }
 
 type CounterCfg struct {
@@ -59,17 +60,20 @@ func NewCounter(cfg CounterCfg) *Counter {
 		t := time.NewTicker(time.Second)
 		for {
 			<-t.C
-			currentWindow := time.Now().Second()%cfg.Windows - 1
-			if currentWindow < 0 {
-				currentWindow = cfg.Windows - 1
+			// currentWindow :=
+			c.currentWindow = time.Now().Second() % cfg.Windows
+			nextWindow := c.currentWindow + 1
+			if nextWindow >= cfg.Windows {
+				nextWindow = 0
 			}
-			c.currentWindow = currentWindow
 
 			for i, m := range c.pool {
 				c.mutex[i].RLock()
 				for k, v := range m {
-					c.decr(k, atomic.LoadInt64(v.windows[currentWindow]))
-					atomic.StoreInt64(v.windows[currentWindow], 0)
+					atomic.StoreInt64(v.Count, atomic.LoadInt64(v.InternalCount))
+					windowCount := atomic.LoadInt64(v.windows[nextWindow])
+					c.decr(k, windowCount)
+					atomic.StoreInt64(v.windows[nextWindow], 0)
 				}
 				c.mutex[i].RUnlock()
 			}
@@ -97,9 +101,10 @@ func (c *Counter) Incr(key string, step int64) {
 		c.mutex[idx].RUnlock()
 		c.mutex[idx].Lock()
 		counter = &CounterItem{
-			Count:   new(int64),
-			Last:    time.Now(),
-			windows: make(map[int]*int64),
+			Count:         new(int64),
+			InternalCount: new(int64),
+			Last:          time.Now(),
+			windows:       make(map[int]*int64),
 		}
 		c.pool[idx][key] = counter
 		for i := 0; i < c.windowSize; i++ {
@@ -112,7 +117,7 @@ func (c *Counter) Incr(key string, step int64) {
 		c.mutex[idx].RUnlock()
 	}
 
-	atomic.AddInt64(counter.Count, step)
+	atomic.AddInt64(counter.InternalCount, step)
 	atomic.AddInt64(wCounter, step)
 	counter.Last = time.Now()
 }
@@ -121,10 +126,11 @@ func (c *Counter) Get(key string) int64 {
 	idx := c.hash(key)
 	c.mutex[idx].RLock()
 	defer c.mutex[idx].RUnlock()
-	if _, ok := c.pool[idx][key]; !ok {
+	ptr, ok := c.pool[idx][key]
+	if !ok {
 		return 0
 	}
-	return atomic.LoadInt64(c.pool[idx][key].Count)
+	return atomic.LoadInt64(ptr.Count)
 }
 
 func (c *Counter) decr(key string, step int64) {
@@ -132,6 +138,6 @@ func (c *Counter) decr(key string, step int64) {
 	c.mutex[idx].RLock()
 	defer c.mutex[idx].RUnlock()
 	if _, ok := c.pool[idx][key]; ok {
-		atomic.AddInt64(c.pool[idx][key].Count, -step)
+		atomic.AddInt64(c.pool[idx][key].InternalCount, -step)
 	}
 }
