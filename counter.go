@@ -41,7 +41,7 @@ func NewCounter(cfg CounterCfg) *Counter {
 	}
 
 	go func() {
-		t := time.NewTicker(time.Second * cfg.GCInterval)
+		t := time.NewTicker(cfg.GCInterval)
 		for {
 			<-t.C
 			for i, m := range c.pool {
